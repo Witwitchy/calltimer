@@ -3,10 +3,18 @@
  * @author Wiçi
  * @description Add call timer to all users in a server voice channel.
  * @authorLink https://github.com/Witwitchy
- * @version 3.2
+ * @version 3.3
  */
 
 module.exports = (_ => {
+
+    // ─── DEBUG ────────────────────────────────────────────────────────────────
+    let DEBUG = false;
+    const log  = (...a) => DEBUG && console.log("[CallTimer]", ...a);
+    const warn = (...a) => DEBUG && console.warn("[CallTimer]", ...a);
+    const err  = (...a) => DEBUG && console.error("[CallTimer]", ...a);
+    // ─────────────────────────────────────────────────────────────────────────
+
     class Timer extends window.BdApi.React.Component {
         constructor(props) {
             try {
@@ -43,25 +51,16 @@ module.exports = (_ => {
         }
     }
 
-    // ─── Modül & metod bulma yardımcıları ─────────────────────────────────────
-
-    /**
-     * Önce tek kaynak string ile dene, bulamazsa kombinasyonları dene.
-     * Bulduğu modülü döner, bulamazsa null.
-     */
     function findVoiceUserModule() {
-        // Doğrudan modül filtresi: avatarContainerClass prop'u içeren Ay fonksiyonu
-        // Bu, moduleId 481947'yi hedef alır (Discord güncellemesiyle ID değişse de içerik sabit kalır)
         const byFilter = window.BdApi.Webpack.getModule(
             (m) => m?.Ay && typeof m.Ay === "function" && m.Ay.toString().includes("avatarContainerClass"),
             { searchExports: false }
         );
         if (byFilter) {
-            console.log("[CallTimer] VoiceUser modülü filtre ile bulundu.");
+            log("VoiceUser modülü filtre ile bulundu.");
             return byFilter;
         }
 
-        // Fallback: eski getBySource yöntemleri
         const attempts = [
             ["avatarContainerClass"],
             ["getAvatarURL"],
@@ -70,62 +69,110 @@ module.exports = (_ => {
         for (const keys of attempts) {
             const mod = window.BdApi.Webpack.getBySource(...keys);
             if (mod && typeof mod?.Ay === "function") {
-                console.log("[CallTimer] VoiceUser modülü getBySource ile bulundu:", keys.join("+"));
+                log("VoiceUser modülü getBySource ile bulundu:", keys.join("+"));
                 return mod;
             }
         }
 
-        console.error("[CallTimer] VoiceUser modülü HİÇ bulunamadı!");
+        err("VoiceUser modülü HİÇ bulunamadı!");
         return null;
     }
 
-    /**
-     * Modül içindeki doğru render metodunu bul.
-     * Önce bilinen adları dener, bulamazsa JSX döndüren tüm metodları tarar.
-     */
     function findRenderMethod(mod) {
         if (!mod) return null;
 
-        // Bilinen obfuscated isimler (Discord güncellemesiyle değişebilir):
         const knownNames = ["Ay", "Z", "render", "default"];
-
         for (const name of knownNames) {
             if (typeof mod[name] === "function") {
-                console.log(`[CallTimer] Metod deneniyor: "${name}"`);
-                // İçinde JSX / React.createElement geçiyor mu?
+                log(`Metod deneniyor: "${name}"`);
                 const src = mod[name].toString();
                 if (src.includes("createElement") || src.includes("voiceUser") || src.includes("user")) {
-                    console.log(`[CallTimer] Render metodu bulundu: "${name}"`);
+                    log(`Render metodu bulundu: "${name}"`);
                     return name;
                 }
             }
         }
 
-        // Fallback: tüm kısa metod isimlerini tara
         const allKeys = Object.keys(mod);
         for (const key of allKeys) {
             if (typeof mod[key] !== "function") continue;
             const src = mod[key].toString();
-            // VoiceUser render'ı genelde "user" prop'u ve bir avatar element'i içerir
-            if (
-                (src.includes("user") || src.includes("avatar")) &&
-                src.includes("createElement")
-            ) {
-                console.log(`[CallTimer] Fallback: render metodu bulundu: "${key}"`);
+            if ((src.includes("user") || src.includes("avatar")) && src.includes("createElement")) {
+                log(`Fallback: render metodu bulundu: "${key}"`);
                 return key;
             }
         }
 
-        console.error("[CallTimer] Render metodu bulunamadı. Mevcut metodlar:", allKeys);
+        err("Render metodu bulunamadı. Mevcut metodlar:", allKeys);
         return null;
     }
-
-    // ─── Ana sınıf ────────────────────────────────────────────────────────────
 
     return class CallTimer {
         users = new Map();  // userId => [channelId, joinTime]
 
         load() { }
+
+        // ─── Ayarlar Paneli ───────────────────────────────────────────────────
+        getSettingsPanel() {
+            const panel = document.createElement("div");
+            panel.style.cssText = "padding: 16px; color: var(--header-primary); font-family: var(--font-primary);";
+
+            // Başlık
+            const title = document.createElement("div");
+            title.textContent = "Debug";
+            title.style.cssText = "font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--header-secondary); margin-bottom: 12px; letter-spacing: 0.5px;";
+            panel.appendChild(title);
+
+            // Satır
+            const row = document.createElement("div");
+            row.style.cssText = "display: flex; align-items: center; justify-content: space-between; background: var(--background-secondary); border-radius: 8px; padding: 12px 16px;";
+
+            // Sol: etiket + açıklama
+            const left = document.createElement("div");
+
+            const label = document.createElement("div");
+            label.textContent = "Debug Modu";
+            label.style.cssText = "font-size: 16px; font-weight: 500;";
+
+            const desc = document.createElement("div");
+            desc.textContent = "Console'da tüm logları göster";
+            desc.style.cssText = "font-size: 12px; color: var(--text-muted); margin-top: 2px;";
+
+            left.appendChild(label);
+            left.appendChild(desc);
+
+            // Sağ: toggle
+            const toggle = document.createElement("div");
+            const updateToggle = () => {
+                toggle.style.cssText = `
+                    width: 40px; height: 24px; border-radius: 12px; cursor: pointer;
+                    background: ${DEBUG ? "var(--brand-experiment)" : "var(--background-tertiary)"};
+                    position: relative; transition: background 0.2s; flex-shrink: 0;
+                `;
+                knob.style.cssText = `
+                    width: 18px; height: 18px; border-radius: 50%; background: white;
+                    position: absolute; top: 3px; transition: left 0.2s;
+                    left: ${DEBUG ? "19px" : "3px"};
+                `;
+            };
+
+            const knob = document.createElement("div");
+            toggle.appendChild(knob);
+            updateToggle();
+
+            toggle.addEventListener("click", () => {
+                DEBUG = !DEBUG;
+                updateToggle();
+                console.log(`[CallTimer] Debug modu: ${DEBUG ? "AÇIK ✅" : "KAPALI ❌"}`);
+            });
+
+            row.appendChild(left);
+            row.appendChild(toggle);
+            panel.appendChild(row);
+
+            return panel;
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         allUsers(guilds) {
             const users = [];
@@ -148,7 +195,6 @@ module.exports = (_ => {
             if (!existing) {
                 this.updateInternal(userId, channelId);
             } else if (existing[0] !== channelId) {
-                // Kanal değiştirdi → timer sıfırla
                 this.updateInternal(userId, channelId);
             }
         }
@@ -157,14 +203,12 @@ module.exports = (_ => {
             const states = this.VoiceStateStore.getAllVoiceStates();
             const current_users = this.allUsers(states);
 
-            // Ayrılanları temizle
             for (const userId of Array.from(this.users.keys())) {
                 if (!current_users.includes(userId)) {
                     this.users.delete(userId);
                 }
             }
 
-            // Yeni kullanıcıları / kanal değişikliklerini kaydet
             for (const guildId in states) {
                 const guild = states[guildId];
                 for (const userId in guild) {
@@ -183,19 +227,16 @@ module.exports = (_ => {
         start() {
             this.VoiceStateStore = window.BdApi.Webpack.getStore("VoiceStateStore");
 
-            // ── Modülü bul ──
             const VoiceUser = findVoiceUserModule();
             if (!VoiceUser) {
-                console.error("[CallTimer] start() iptal: modül yok.");
+                err("start() iptal: modül yok.");
                 return;
             }
 
-            // ── Metodu bul ──
             const methodName = findRenderMethod(VoiceUser);
             if (!methodName) {
-                console.error("[CallTimer] start() iptal: metod yok.");
-                // Geliştiriciye yardım: tüm metodları logla
-                console.log("[CallTimer] Modül içerikleri:", Object.keys(VoiceUser).map(k => ({
+                err("start() iptal: metod yok.");
+                log("Modül içerikleri:", Object.keys(VoiceUser).map(k => ({
                     key: k,
                     type: typeof VoiceUser[k],
                     preview: typeof VoiceUser[k] === "function"
@@ -205,28 +246,28 @@ module.exports = (_ => {
                 return;
             }
 
-            console.log(`[CallTimer] Patch başlıyor: VoiceUser["${methodName}"]`);
+            log(`Patch başlıyor: VoiceUser["${methodName}"]`);
 
             window.BdApi.Patcher.after("CallTimer", VoiceUser, methodName, (_, [props], returnValue) => {
-                console.log("[CallTimer] ✅ Patcher tetiklendi:", props?.user?.id, props?.user?.username);
+                log("✅ Patcher tetiklendi:", props?.user?.id, props?.user?.username);
                 if (!returnValue || !props?.user) return;
                 this.processVoiceUser(_, [props], returnValue);
             });
 
             this.interval = setInterval(() => this.runEverySecond(), 1000);
-            console.log("[CallTimer] ✅ Plugin başlatıldı.");
+            log("✅ Plugin başlatıldı.");
         }
 
         stop() {
             window.BdApi.Patcher.unpatchAll("CallTimer");
             clearInterval(this.interval);
-            console.log("[CallTimer] Plugin durduruldu.");
+            log("Plugin durduruldu.");
         }
 
         createUserTimer(user, parent) {
             const entry = this.users.get(user.id);
             if (!entry) {
-                console.warn("[CallTimer] createUserTimer: kullanıcı bulunamadı", user.id);
+                warn("createUserTimer: kullanıcı bulunamadı", user.id);
                 return;
             }
             const time = entry[1];
@@ -236,10 +277,10 @@ module.exports = (_ => {
                 if (Array.isArray(parent)) {
                     parent.splice(3, 0, tag);
                 } else {
-                    console.warn("[CallTimer] parent dizi değil:", parent);
+                    warn("parent dizi değil:", parent);
                 }
             } catch (e) {
-                console.error("[CallTimer] createUserTimer splice hatası:", e);
+                err("createUserTimer splice hatası:", e);
             }
         }
 
@@ -252,12 +293,12 @@ module.exports = (_ => {
             try {
                 const parent = returnValue.props.children.props.children;
                 if (!Array.isArray(parent)) {
-                    console.warn("[CallTimer] parent yolu geçersiz, returnValue yapısı:", JSON.stringify(returnValue, null, 2).substring(0, 500));
+                    warn("parent yolu geçersiz, returnValue yapısı:", JSON.stringify(returnValue, null, 2).substring(0, 500));
                     return;
                 }
                 this.createUserTimer(user, parent);
             } catch (e) {
-                console.error("[CallTimer] processVoiceUser hata:", e, "returnValue:", returnValue);
+                err("processVoiceUser hata:", e, "returnValue:", returnValue);
             }
         }
     };
