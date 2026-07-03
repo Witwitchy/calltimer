@@ -1,10 +1,11 @@
 /**
  * @name AllCallTimer
  * @author Witwitchy
+ * @authorId 92660365
  * @description Add call timer to all users in a server voice channel.
  * @version 3.4
- * @website https://github.com/Witwitchy
- * @source https://raw.githubusercontent.com/Witwitchy/calltimer/refs/heads/main/CallTimer.plugin.js
+ * @source https://github.com/Witwitchy/calltimer/blob/main/CallTimer.plugin.js
+ * @updateUrl https://raw.githubusercontent.com/Witwitchy/calltimer/refs/heads/main/CallTimer.plugin.js
 
  */
 
