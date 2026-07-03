@@ -3,20 +3,34 @@
  * @author Witwitchy
  * @authorId 92660365
  * @description Add call timer to all users in a server voice channel.
- * @version 3.5
+ * @version 3.5.1
  * @source https://github.com/Witwitchy/calltimer/blob/main/CallTimer.plugin.js
  * @updateUrl https://raw.githubusercontent.com/Witwitchy/calltimer/refs/heads/main/CallTimer.plugin.js
  */
 
 module.exports = (_ => {
 
-    // ─── DEBUG ────────────────────────────────────────────────────────────────
-    let DEBUG = false;
-    const log  = (...a) => DEBUG && console.log("[CallTimer]", ...a);
-    const warn = (...a) => DEBUG && console.warn("[CallTimer]", ...a);
-    const err  = (...a) => DEBUG && console.error("[CallTimer]", ...a);
-    // ─────────────────────────────────────────────────────────────────────────
+		// ─── DEBUG ────────────────────────────────────────────────────────────────
+		const CONFIG_KEY = "settings";
 
+		let settings = {
+			debug: BdApi.Data.load("CallTimer", CONFIG_KEY)?.debug ?? false
+		};
+
+		let DEBUG = settings.debug;		
+		const VERSION = "3.5.1";		
+		const GITHUB_RAW ="https://raw.githubusercontent.com/Witwitchy/calltimer/refs/heads/main/CallTimer.plugin.js";
+
+		const saveSettings = () => {
+			settings.debug = DEBUG;
+			BdApi.Data.save("CallTimer", CONFIG_KEY, settings);
+		};
+
+		const log  = (...a) => DEBUG && console.log("[CallTimer]", ...a);
+		const warn = (...a) => DEBUG && console.warn("[CallTimer]", ...a);
+		const err  = (...a) => DEBUG && console.error("[CallTimer]", ...a);
+		// ─────────────────────────────────────────────────────────────────────────
+		
     class Timer extends window.BdApi.React.Component {
         constructor(props) {
             try {
@@ -111,70 +125,79 @@ module.exports = (_ => {
 
     return class CallTimer {
         users = new Map();  // userId => [channelId, joinTime]
-
+		
+		updateState = {
+			checking: false,
+			latest: null,
+			status: "idle" // idle | up-to-date | outdated
+		};
+		
         load() { }
 
         // ─── Ayarlar Paneli ───────────────────────────────────────────────────
-        getSettingsPanel() {
-            const panel = document.createElement("div");
-            panel.style.cssText = "padding: 16px; color: var(--header-primary); font-family: var(--font-primary);";
+		getSettingsPanel() {
+			const { React, Components } = BdApi;
 
-            // Başlık
-            const title = document.createElement("div");
-            title.textContent = "Debug";
-            title.style.cssText = "font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--header-secondary); margin-bottom: 12px; letter-spacing: 0.5px;";
-            panel.appendChild(title);
+			const {
+				SettingGroup,
+				SettingItem,
+				SwitchInput,
+				Button,
+				Text
+			} = Components;
 
-            // Satır
-            const row = document.createElement("div");
-            row.style.cssText = "display: flex; align-items: center; justify-content: space-between; background: var(--background-secondary); border-radius: 8px; padding: 12px 16px;";
+			return React.createElement(
+				SettingGroup,
+				{
+					name: "AllCallTimer Settings",
+					collapsible: false,
+					shown: true
+				},
+				React.createElement(SettingItem, {
+					children: React.createElement(
+						BdApi.Components.Flex,
+						{
+							direction: "row",
+							align: "center",
+							justify: "space-between"
+						},
+						[
+		// SOL TARAF
+			React.createElement(
+			BdApi.Components.Flex,
+				{ direction: "column" },
+				[
+					React.createElement("div", {
+						style: {
+							fontWeight: "600",
+							fontSize: "14px",
+							color: "var(--header-primary)"
+						},
+						children: "Debug Mode"
+					}),
+				]
+			),
 
-            // Sol: etiket + açıklama
-            const left = document.createElement("div");
+		// SAĞ TARAF (SWITCH)
+				React.createElement(SwitchInput, {
+					value: DEBUG,
+					onChange: (value) => {
+						DEBUG = value;
+						saveSettings();
+						console.log(`[CallTimer] Debug modu: ${DEBUG ? "AÇIK ✅" : "KAPALI ❌"}`);
+					}
+				})
+			]
+		)
+	}),
 
-            const label = document.createElement("div");
-            label.textContent = "Debug Modu";
-            label.style.cssText = "font-size: 16px; font-weight: 500;";
-
-            const desc = document.createElement("div");
-            desc.textContent = "Console'da tüm logları göster";
-            desc.style.cssText = "font-size: 12px; color: var(--text-muted); margin-top: 2px;";
-
-            left.appendChild(label);
-            left.appendChild(desc);
-
-            // Sağ: toggle
-            const toggle = document.createElement("div");
-            const updateToggle = () => {
-                toggle.style.cssText = `
-                    width: 40px; height: 24px; border-radius: 12px; cursor: pointer;
-                    background: ${DEBUG ? "var(--brand-experiment)" : "var(--background-tertiary)"};
-                    position: relative; transition: background 0.2s; flex-shrink: 0;
-                `;
-                knob.style.cssText = `
-                    width: 18px; height: 18px; border-radius: 50%; background: white;
-                    position: absolute; top: 3px; transition: left 0.2s;
-                    left: ${DEBUG ? "19px" : "3px"};
-                `;
-            };
-
-            const knob = document.createElement("div");
-            toggle.appendChild(knob);
-            updateToggle();
-
-            toggle.addEventListener("click", () => {
-                DEBUG = !DEBUG;
-                updateToggle();
-                console.log(`[CallTimer] Debug modu: ${DEBUG ? "AÇIK ✅" : "KAPALI ❌"}`);
-            });
-
-            row.appendChild(left);
-            row.appendChild(toggle);
-            panel.appendChild(row);
-
-            return panel;
-        }
-        // ─────────────────────────────────────────────────────────────────────
+				React.createElement(Button, {
+					children: "Check for Updates",
+					onClick: () => this.checkForUpdates()
+				})
+			);
+		}
+		// ─────────────────────────────────────────────────────────────────────
 
         allUsers(guilds) {
             const users = [];
@@ -270,7 +293,90 @@ module.exports = (_ => {
 
 			attemptPatch();
 		}
-        stop() {
+checkForUpdates() {
+    return (async () => {
+        try {
+            const res = await fetch(GITHUB_RAW);
+            const text = await res.text();
+
+            const match = text.match(/@version\s+([0-9.]+)/);
+            if (!match) {
+                BdApi.UI.showToast("Version bulunamadı", { type: "error" });
+                return;
+            }
+
+            const latest = match[1];
+
+            if (latest === VERSION) {
+                this.updateState.status = "up-to-date";
+
+                BdApi.UI.showToast("En güncel sürüm ✔", {
+                    type: "success"
+                });
+            } else {
+                this.updateState.status = "outdated";
+                this.updateState.latest = latest;
+
+                BdApi.UI.showConfirmationModal(
+					"Update Available",
+					`\nLatest version: ${latest}\n\nDo you want to download the update now?`,
+					{
+						confirmText: "Update",
+						cancelText: "Later",
+						onConfirm: () => this.downloadUpdate()
+					}
+				);
+            }
+
+        } catch (e) {
+            console.error(e);
+            BdApi.UI.showToast("Update check failed", { type: "error" });
+        }
+    })();
+}
+
+async downloadUpdate() {
+    try {
+        const fs = require("fs");
+        const path = require("path");
+
+        const pluginPath = path.join(
+            BdApi.Plugins.folder,
+            "CallTimer.plugin.js"
+        );
+
+        BdApi.UI.showToast("Downloading update...", {
+            type: "info"
+        });
+
+        const response = await fetch(GITHUB_RAW + "?t=" + Date.now());
+
+        if (!response.ok)
+            throw new Error(`HTTP ${response.status}`);
+
+        const pluginCode = await response.text();
+
+        // Basit doğrulama
+        if (!pluginCode.includes("@name AllCallTimer")) {
+            throw new Error("Downloaded file doesn't look like the plugin.");
+        }
+
+        fs.writeFileSync(pluginPath, pluginCode, "utf8");
+
+        BdApi.UI.showToast(
+            "Update installed. Disable and enable the plugin (or press Ctrl+R).",
+            { type: "success" }
+        );
+
+    } catch (e) {
+        console.error("[CallTimer Update]", e);
+
+        BdApi.UI.showToast(
+            "Plugin update failed. Check the console.",
+            { type: "error" }
+        );
+    }
+}        stop() {
             window.BdApi.Patcher.unpatchAll("CallTimer");
 			
             clearInterval(this.interval);
