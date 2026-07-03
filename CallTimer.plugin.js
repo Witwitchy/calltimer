@@ -1,9 +1,11 @@
 /**
- * @name a.CallTimer
- * @author Wiçi
+ * @name AllCallTimer
+ * @author Witwitchy
  * @description Add call timer to all users in a server voice channel.
- * @authorLink https://github.com/Witwitchy
- * @version 3.3
+ * @version 3.4
+ * @website https://github.com/Witwitchy
+ * @source https://raw.githubusercontent.com/Witwitchy/calltimer/refs/heads/main/CallTimer.plugin.js
+
  */
 
 module.exports = (_ => {
@@ -224,43 +226,56 @@ module.exports = (_ => {
             }
         }
 
-        start() {
-            this.VoiceStateStore = window.BdApi.Webpack.getStore("VoiceStateStore");
+		start() {
+			this.VoiceStateStore = window.BdApi.Webpack.getStore("VoiceStateStore");
 
-            const VoiceUser = findVoiceUserModule();
-            if (!VoiceUser) {
-                err("start() iptal: modül yok.");
-                return;
-            }
+			const attemptPatch = () => {
 
-            const methodName = findRenderMethod(VoiceUser);
-            if (!methodName) {
-                err("start() iptal: metod yok.");
-                log("Modül içerikleri:", Object.keys(VoiceUser).map(k => ({
-                    key: k,
-                    type: typeof VoiceUser[k],
-                    preview: typeof VoiceUser[k] === "function"
-                        ? VoiceUser[k].toString().substring(0, 150)
-                        : VoiceUser[k]
-                })));
-                return;
-            }
+				const VoiceUser = findVoiceUserModule();
 
-            log(`Patch başlıyor: VoiceUser["${methodName}"]`);
+				if (!VoiceUser) {
+					log("VoiceUser bulunamadı. 1 saniye sonra tekrar denenecek...");
+					this.retryTimeout = setTimeout(attemptPatch, 1000);
+					return;
+				}
 
-            window.BdApi.Patcher.after("CallTimer", VoiceUser, methodName, (_, [props], returnValue) => {
-                log("✅ Patcher tetiklendi:", props?.user?.id, props?.user?.username);
-                if (!returnValue || !props?.user) return;
-                this.processVoiceUser(_, [props], returnValue);
-            });
+				const methodName = findRenderMethod(VoiceUser);
 
-            this.interval = setInterval(() => this.runEverySecond(), 1000);
-            log("✅ Plugin başlatıldı.");
-        }
+				if (!methodName) {
+					log("Render metodu bulunamadı. 1 saniye sonra tekrar denenecek...");
+					this.retryTimeout = setTimeout(attemptPatch, 1000);
+					return;
+				}
 
+				log(`Patch başlıyor: VoiceUser["${methodName}"]`);
+
+				window.BdApi.Patcher.after(
+					"CallTimer",
+					VoiceUser,
+					methodName,
+					(_, [props], returnValue) => {
+
+						log("✅ Patcher tetiklendi:", props?.user?.id, props?.user?.username);
+
+						if (!returnValue || !props?.user) return;
+
+						this.processVoiceUser(_, [props], returnValue);
+					}
+				);
+
+				this.interval = setInterval(() => this.runEverySecond(), 1000);
+
+				log("✅ Plugin başlatıldı.");
+			};
+
+			attemptPatch();
+		}
         stop() {
             window.BdApi.Patcher.unpatchAll("CallTimer");
+			
             clearInterval(this.interval);
+			clearTimeout(this.retryTimeout);
+			
             log("Plugin durduruldu.");
         }
 
